@@ -38,26 +38,21 @@ AR（拡張現実）を使ったWi-Fi情報共有ゲームです。スマート�
    🔗  Production: https://your-project-name.vercel.app
    ```
 
-### 方法2: GitHub経由でデプロイ
+### 方法2: GitHub経由でデプロイ（自動デプロイ対応）
 
-1. **Gitリポジトリを初期化**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   ```
+**詳細な手順は [`GITHUB_VERCEL_SETUP.md`](GITHUB_VERCEL_SETUP.md) を参照してください。**
 
-2. **GitHubにリポジトリを作成**し、プッシュ
-   ```bash
-   git remote add origin https://github.com/your-username/your-repo.git
-   git branch -M main
-   git push -u origin main
-   ```
+1. **GitHubリポジトリ**: https://github.com/Yuki33825/wifi-ar-game
 
-3. **Vercelダッシュボード**（https://vercel.com）にアクセス
-   - 「New Project」をクリック
-   - GitHubリポジトリをインポート
+2. **Vercelダッシュボード**（https://vercel.com）で設定
+   - 「Add New...」→「Project」をクリック
+   - GitHubリポジトリ `Yuki33825/wifi-ar-game` をインポート
    - 設定を確認して「Deploy」
+
+3. **自動デプロイの設定**
+   - GitHubにプッシュするたびに、Vercelが自動的にデプロイします
+   - `main`ブランチへのプッシュ → 本番環境にデプロイ
+   - その他のブランチ → プレビュー環境にデプロイ
 
 ## 📱 使い方
 
