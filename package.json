@@ -1,0 +1,13 @@
+{
+  "name": "wifi-ar-game",
+  "version": "1.0.0",
+  "description": "脱走したWi-Fiを追いかけろ！ - ARゲーム",
+  "scripts": {
+    "dev": "npx serve .",
+    "deploy": "CI= npx vercel --prod",
+    "deploy:interactive": "CI= npx vercel --prod"
+  },
+  "keywords": ["ar", "aframe", "arjs", "game"],
+  "author": "",
+  "license": "MIT"
+}

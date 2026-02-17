@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>脱走Wi-Fiを捕まえろ！</title>
+
+  <!-- A-Frame + AR.js CDN -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 24px 16px;
+      box-sizing: border-box;
+    }
+
+    #title-bar {
+      text-align: center;
+      background: rgba(0, 0, 0, 0.55);
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+
+    #title-bar h1 {
+      margin: 0;
+      font-size: 18px;
+      color: #fff;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    }
+
+    #status-bar {
+      text-align: center;
+      background: rgba(0, 0, 0, 0.55);
+      border-radius: 12px;
+      padding: 16px;
+      transition: all 0.3s ease;
+    }
+
+    #status-bar.caught {
+      background: rgba(0, 180, 80, 0.85);
+    }
+
+    #status-message {
+      margin: 0 0 4px 0;
+      font-size: 16px;
+      color: #fff;
+      font-weight: bold;
+    }
+
+    #wifi-info {
+      display: none;
+      margin-top: 12px;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    #wifi-info .label {
+      opacity: 0.8;
+    }
+
+    #wifi-info .value {
+      font-weight: bold;
+      font-size: 18px;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 2px 10px;
+      border-radius: 6px;
+      letter-spacing: 1px;
+    }
+
+    #wifi-info .hint {
+      margin-top: 12px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    /* 距離＆状態HUD */
+    #hud-info {
+      position: fixed;
+      bottom: 120px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    #dist-text {
+      color: #fff;
+      font-size: 22px;
+      font-weight: bold;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+
+    #dist-trend {
+      margin-top: 4px;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    #dist-trend.approaching {
+      color: #44ff88;
+    }
+
+    #dist-trend.receding {
+      color: #ff6666;
+    }
+
+    #proximity-bar-wrap {
+      margin: 8px auto 0;
+      width: 180px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #proximity-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ff4444, #ffaa00, #00ff88);
+      border-radius: 4px;
+      transition: width 0.2s;
+    }
+
+    /* ゲット演出 */
+    #catch-flash {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.9);
+      z-index: 10000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    #catch-flash.active {
+      opacity: 1;
+    }
+
+    /* 音声有効化オーバーレイ（iOS Safari用） */
+    #audio-unlock {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 10001;
+      pointer-events: auto;
+      display: none;
+    }
+
+    /* 部屋サイズ設定UI */
+    #room-config {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      /* More opaque */
+      backdrop-filter: blur(10px);
+      /* Blur background */
+      border-radius: 16px;
+      padding: 24px;
+      z-index: 9999;
+      pointer-events: auto;
+      font-size: 14px;
+      color: #fff;
+      width: 300px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #room-config h3 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      color: #00ddff;
+      text-align: center;
+    }
+
+    .config-row {
+      margin-bottom: 16px;
+    }
+
+    .config-row label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .config-row input[type=range] {
+      width: 100%;
+      accent-color: #00ddff;
+    }
+
+    #room-config button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 8px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #444;
+      color: #fff;
+      transition: background 0.2s;
+    }
+
+    #room-config button:active {
+      background: #666;
+    }
+
+    #room-config button#reset-position {
+      background: #00ddff;
+      color: #000;
+      margin-bottom: 12px;
+    }
+
+    #room-config button#start-game {
+      background: #00ff88;
+      color: #000;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ゲット時フラッシュ -->
+  <div id="catch-flash"></div>
+
+  <!-- 音声有効化オーバーレイ（iOS Safari用・初回タップで音声unlock） -->
+  <div id="audio-unlock"></div>
+
+  <!-- 部屋サイズ設定UI -->
+  <div id="room-config">
+    <h3>プレイエリア設定</h3>
+
+    <div class="config-row">
+      <label>幅 (Width): <span id="val-width">5.0m</span></label>
+      <input type="range" id="room-width" min="2.0" max="10.0" step="0.5" value="5.0">
+    </div>
+
+    <div class="config-row">
+      <label>奥行 (Depth): <span id="val-depth">6.0m</span></label>
+      <input type="range" id="room-depth" min="2.0" max="10.0" step="0.5" value="6.0">
+    </div>
+
+    <div class="config-row">
+      <label>高さ (Height): <span id="val-height">2.5m</span></label>
+      <input type="range" id="room-height" min="1.5" max="5.0" step="0.1" value="2.5">
+    </div>
+
+    <button id="reset-position">📍 目の前に配置</button>
+    <button id="start-game">ゲーム開始</button>
+  </div>
+
+  <!-- UIオーバーレイ -->
+  <div id="overlay">
+    <div id="title-bar">
+      <h1>脱走したWi-Fiを追いかけろ！</h1>
+      <div style="margin-top:8px;">
+        <a href="/webxr"
+          style="display:inline-block; padding:8px 16px; background:rgba(0, 221, 255, 0.8); color:#000; text-decoration:none; border-radius:20px; font-weight:bold; font-size:12px;">
+          🚀 高精度(WebXR)版を試す
+        </a>
+      </div>
+    </div>
+    <div id="status-bar" style="display: none;">
+      <p id="status-message"></p>
+      <div id="wifi-info">
+        <div><span class="label">SSID：</span><span class="value" id="ssid-value"></span></div>
+        <div style="margin-top:6px"><span class="label">PASS：</span><span class="value" id="pass-value"></span></div>
+        <p class="hint">設定アプリを開いて、このWi-Fiに接続してください</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 距離HUD -->
+  <div id="hud-info">
+    <div id="dist-text"></div>
+    <div id="dist-trend"></div>
+    <div id="proximity-bar-wrap">
+      <div id="proximity-bar"></div>
+    </div>
+    <!-- 歩行検知デバッグ表示（デフォルト非表示） -->
+    <div id="debug-info" style="
+      margin-top: 8px; 
+      font-size: 10px; 
+      color: rgba(255,255,255,0.7); 
+      display: none;
+    "></div>
+  </div>
+
+  <!-- ========================================
+       A-Frameコンポーネント定義
+       ======================================== -->
+  <script>
+    /* ============================================================
+       チューニング用パラメータ（ここを変えると挙動が変わる）
+       ============================================================ */
+
+    // Wi-Fi移動 ─ 半径を変えると飛び回る範囲が変わる
+    const MOVE_RADIUS_MIN = 4;
+    const MOVE_RADIUS_MAX = 6;
+
+    // Wi-Fi移動 ─ 速度(m/s)を変えると移動の速さが変わる
+    const MOVE_SPEED = 0.8;
+
+    // Wi-Fi移動 ─ ターゲット到着後の待機時間(秒)
+    const MOVE_WAIT_MIN = 0.5;
+    const MOVE_WAIT_MAX = 2.0;
+
+    // ゲット判定 ─ 距離(m)を小さくすると近づかないと捕まえられない
+    const CATCH_DISTANCE = 1.2;
+
+    // ゲット判定 ─ カメラがWi-Fiの方を向いている必要がある角度(度)
+    // この角度以内に捉えていないとゲットできない
+    const CATCH_ANGLE = 60;
+
+    // Wi-Fi移動 ─ この距離まで近づいたらWi-Fiが停止する(m)
+    // CATCH_DISTANCE以下にすると基本的に動き続ける
+    const FREEZE_DISTANCE = CATCH_DISTANCE; // 捕まえる瞬間だけ停止
+
+    // 軌跡 ─ 生成間隔(秒)を小さくすると軌跡が密になる
+    const TRAIL_INTERVAL = 0.15;
+
+    // 軌跡 ─ 生存時間(秒)を長くすると軌跡が長く残る
+    const TRAIL_LIFETIME = 3.0;
+
+    // 軌跡 ─ 上限数を超えると古いものから削除
+    const TRAIL_MAX_COUNT = 80;
+
+    // 表示するWi-Fi情報（後で差し替えてください）
+    const WIFI_SSID = 'MEETING_WIFI';
+    const WIFI_PASS = 'password123';
+
+    // Wi-Fiオブジェクトの高さオフセット（カメラ基準）
+    const WIFI_HEIGHT_MIN = -0.5;
+    const WIFI_HEIGHT_MAX = 1.5;
+
+    // 近接音 ─ ビープの周波数範囲(Hz)を変えると音の高さが変わる
+    const BEEP_FREQ_FAR = 300;      // 遠いときの周波数
+    const BEEP_FREQ_NEAR = 1200;    // 近いときの周波数
+
+    // 近接音 ─ ビープ間隔(秒)を変えると鳴る頻度が変わる
+    const BEEP_INTERVAL_FAR = 1.5;  // 遠いときの間隔
+    const BEEP_INTERVAL_NEAR = 0.1; // 近いときの間隔
+
+    // 近接音 ─ ビープが鳴り始める距離(m)
+    const BEEP_START_DISTANCE = 8.0;
+
+    // 近接音 ─ ビープ1回の長さ(秒)
+    const BEEP_DURATION = 0.08;
+
+    // 距離スケーリング ─ Wi-Fiオブジェクトの見た目サイズ
+    const SCALE_AT_FAR = 0.4;       // 遠いとき（小さく）
+    const SCALE_AT_NEAR = 1.5;      // 近いとき（大きく）
+    const SCALE_FAR_DIST = 8.0;     // 「遠い」とみなす距離
+    const SCALE_NEAR_DIST = 1.0;    // 「近い」とみなす距離
+
+    /* ============================================================
+       ゲーム状態
+       ============================================================ */
+    let gameCaught = false;
+    let gameStarted = false;  // ARシーンの準備完了後にtrueにする
+    let audioUnlocked = false;
+
+    /* ============================================================
+       部屋サイズ＆原点（動的に変更可能）
+       ============================================================ */
+    let roomSize = {
+      width: 5.0,   // X軸方向
+      depth: 6.0,   // Z軸方向
+      height: 2.5   // Y軸方向
+    };
+    let roomOrigin = new THREE.Vector3(0, 0, 0);  // 部屋の中心（床面）
+
+    /* ============================================================
+       Web Audio API ─ 近接ビープ音
+       ============================================================ */
+    let audioCtx = null;
+    let lastBeepTime = 0;
+
+    function initAudio() {
+      if (audioCtx) return;
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        console.warn('AudioContext not supported', e);
+      }
+    }
+
+    function unlockAudio() {
+      if (audioUnlocked || !audioCtx) return;
+      // iOS Safariはユーザー操作後にAudioContextを再開する必要がある
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      // ダミー音を再生して音声unlock
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.01);
+      audioUnlocked = true;
+    }
+
+    function playBeep(frequency, volume) {
+      if (!audioCtx || gameCaught) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = frequency;
+      gain.gain.value = volume;
+      // フェードアウトでプチノイズ防止
+      gain.gain.setTargetAtTime(0, audioCtx.currentTime + BEEP_DURATION * 0.7, 0.01);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + BEEP_DURATION);
+    }
+
+    // ゲット時の効果音（上昇音）
+    function playCatchSound() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+      osc.frequency.linearRampToValueAtTime(1600, audioCtx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 0.05);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    // 距離に応じたビープ処理（毎フレーム呼ばれる）
+    function updateProximityBeep(distance, now) {
+      if (!audioCtx || gameCaught || distance > BEEP_START_DISTANCE) return;
+
+      // 距離を0〜1に正規化（0=近い, 1=遠い）
+      const t = Math.max(0, Math.min(1,
+        (distance - CATCH_DISTANCE) / (BEEP_START_DISTANCE - CATCH_DISTANCE)
+      ));
+
+      // ビープ間隔: 近いほど短い
+      const interval = BEEP_INTERVAL_NEAR + t * (BEEP_INTERVAL_FAR - BEEP_INTERVAL_NEAR);
+
+      if (now - lastBeepTime >= interval) {
+        // 周波数: 近いほど高い
+        const freq = BEEP_FREQ_NEAR + t * (BEEP_FREQ_FAR - BEEP_FREQ_NEAR);
+        // 音量: 近いほど大きい (0.05〜0.25)
+        const vol = 0.05 + (1 - t) * 0.2;
+        playBeep(freq, vol);
+        lastBeepTime = now;
+      }
+    }
+
+    /* ============================================================
+       ゲーム初期化・音声unlock（iOS Safari対応）
+       ============================================================ */
+    document.addEventListener('DOMContentLoaded', function () {
+      // AudioContextを事前に初期化
+      initAudio();
+
+      // 初回タップで音声unlock（iOS Safari用）
+      const unlockOverlay = document.getElementById('audio-unlock');
+      if (unlockOverlay) {
+        unlockOverlay.addEventListener('click', function () {
+          unlockAudio();
+          unlockOverlay.style.display = 'none';
+        }, { once: true });
+      }
+
+      // 念のため画面全体のタップでもunlock試行
+      document.body.addEventListener('touchstart', function () {
+        if (audioCtx && !audioUnlocked) {
+          unlockAudio();
+        }
+      }, { once: true });
+
+      // --- 設定UIの更新ロジック ---
+      const inputs = {
+        width: document.getElementById('room-width'),
+        depth: document.getElementById('room-depth'),
+        height: document.getElementById('room-height')
+      };
+      const displays = {
+        width: document.getElementById('val-width'),
+        depth: document.getElementById('val-depth'),
+        height: document.getElementById('val-height')
+      };
+
+      function updateRoomSize() {
+        roomSize.width = parseFloat(inputs.width.value);
+        roomSize.depth = parseFloat(inputs.depth.value);
+        roomSize.height = parseFloat(inputs.height.value);
+
+        displays.width.textContent = roomSize.width.toFixed(1) + 'm';
+        displays.depth.textContent = roomSize.depth.toFixed(1) + 'm';
+        displays.height.textContent = roomSize.height.toFixed(1) + 'm';
+
+        // 境界ボックスを更新
+        const boundaryBox = document.getElementById('boundary-box');
+        if (boundaryBox && boundaryBox.components['boundary-box-updater']) {
+          boundaryBox.components['boundary-box-updater'].updateBox();
+        }
+
+        // Wi-Fiの位置をリセット（部屋内に収める）
+        const wifiEl = document.getElementById('wifi-entity');
+        if (wifiEl && wifiEl.components['wifi-mover']) {
+          // まだゲーム開始前なら位置をリセットする必要はないかもしれないが、
+          // 壁の外に出てしまっていると見失うので念のため
+          if (gameStarted) wifiEl.components['wifi-mover'].resetPosition();
+        }
+      }
+
+      // スライダーのイベントリスナー
+      Object.values(inputs).forEach(input => {
+        input.addEventListener('input', updateRoomSize);
+      });
+
+      // 「目の前に配置」ボタン
+      const resetPosBtn = document.getElementById('reset-position');
+      if (resetPosBtn) {
+        resetPosBtn.addEventListener('click', function () {
+          const cameraEl = document.querySelector('[camera]');
+          if (cameraEl) {
+            const camPos = new THREE.Vector3();
+            cameraEl.object3D.getWorldPosition(camPos);
+
+            // カメラの向き（Y軸回転のみ考慮）を取得
+            const camRot = new THREE.Euler().setFromQuaternion(cameraEl.object3D.quaternion, 'YXZ');
+
+            // 前方2mの位置を計算
+            const forward = new THREE.Vector3(0, 0, -2); // 2m前方
+            forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), camRot.y);
+
+            roomOrigin.copy(camPos).add(forward);
+            roomOrigin.y = 0; // 床の高さは固定（0）と仮定
+            // ※将来的にはカメラの高さを考慮して床高さを推定するロジックを入れても良い
+
+            console.log('Room origin reset to:', roomOrigin);
+
+            // 境界ボックス更新
+            const boundaryBox = document.getElementById('boundary-box');
+            if (boundaryBox && boundaryBox.components['boundary-box-updater']) {
+              boundaryBox.components['boundary-box-updater'].updateBox();
+            }
+          }
+        });
+      }
+
+      // ゲーム開始ボタン
+      const startBtn = document.getElementById('start-game');
+      if (startBtn) {
+        startBtn.addEventListener('click', function () {
+          gameStarted = true;
+          console.log('Game manually started!');
+
+          // room-configパネルを非表示
+          const roomConfig = document.getElementById('room-config');
+          if (roomConfig) {
+            roomConfig.style.display = 'none';
+          }
+
+          // iOS 13+ 加速度センサーの許可リクエスト
+          if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission()
+              .then(permissionState => {
+                if (permissionState === 'granted') {
+                  const cameraEl = document.querySelector('[camera]');
+                  if (cameraEl && cameraEl.components['motion-walk']) {
+                    cameraEl.components['motion-walk'].enable();
+                  }
+                } else {
+                  alert('歩行検知のためにはセンサー許可が必要です');
+                }
+              })
+              .catch(console.error);
+          } else {
+            // Androidなど許可不要な場合も有効化
+            const cameraEl = document.querySelector('[camera]');
+            if (cameraEl && cameraEl.components['motion-walk']) {
+              cameraEl.components['motion-walk'].enable();
+            }
+          }
+
+          // ゲーム開始時にWi-Fiを初期配置
+          const wifiEl = document.getElementById('wifi-entity');
+          if (wifiEl && wifiEl.components['wifi-mover']) {
+            wifiEl.components['wifi-mover'].resetPosition();
+            wifiEl.setAttribute('visible', true);
+          }
+
+          // 境界ボックスを目立たなくする（または消す）
+          // 今回は「色付き半透明」のまま残すが、プレイの邪魔にならないよう透明度を下げる
+          const boundaryBox = document.getElementById('boundary-box');
+          if (boundaryBox) {
+            boundaryBox.setAttribute('material', 'opacity', 0.1);
+          }
+        });
+      }
+
+      // A-Frameシーンが完全にロードされたら初期化
+      const scene = document.querySelector('a-scene');
+      if (scene) {
+        scene.addEventListener('renderstart', function () {
+          console.log('AR scene render started');
+          setTimeout(function () {
+            // 初期位置を設定（とりあえず原点の前方）
+            // 「目の前に配置」ボタンでユーザーが調整することを前提とする
+            const cameraEl = document.querySelector('[camera]');
+            if (cameraEl) {
+              const camPos = new THREE.Vector3();
+              cameraEl.object3D.getWorldPosition(camPos);
+              const forward = new THREE.Vector3(0, 0, -3);
+              forward.applyQuaternion(cameraEl.object3D.quaternion);
+              roomOrigin.copy(camPos).add(forward);
+              roomOrigin.y = 0;
+            }
+
+            // 境界ボックスを表示
+            const boundaryBox = document.getElementById('boundary-box');
+            if (boundaryBox) {
+              boundaryBox.setAttribute('visible', true);
+              if (boundaryBox.components['boundary-box-updater']) {
+                boundaryBox.components['boundary-box-updater'].updateBox();
+              }
+            }
+          }, 500);
+        });
+      } else {
+        console.warn('Scene not found');
+      }
+    });
+
+    /* ============================================================
+       ユーティリティ
+       ============================================================ */
+    function randBetween(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    // 部屋原点からの相対座標でランダム位置を生成
+    function generateRandomPositionInRoom() {
+      const halfW = roomSize.width / 2;
+      const halfD = roomSize.depth / 2;
+      const relX = randBetween(-halfW, halfW);
+      const relZ = randBetween(-halfD, halfD);
+      const relY = randBetween(0.3, roomSize.height - 0.3); // 床・天井から少し離す
+      return roomOrigin.clone().add(new THREE.Vector3(relX, relY, relZ));
+    }
+
+    // 速度ベクトル反射を含む境界チェック
+    // posは絶対座標、velocityは速度ベクトル
+    function bounceOffWalls(pos, velocity) {
+      const rel = pos.clone().sub(roomOrigin);
+      const halfW = roomSize.width / 2;
+      const halfD = roomSize.depth / 2;
+
+      // X方向
+      if (rel.x > halfW) {
+        rel.x = halfW;
+        velocity.x = -Math.abs(velocity.x);
+      } else if (rel.x < -halfW) {
+        rel.x = -halfW;
+        velocity.x = Math.abs(velocity.x);
+      }
+
+      // Z方向
+      if (rel.z > halfD) {
+        rel.z = halfD;
+        velocity.z = -Math.abs(velocity.z);
+      } else if (rel.z < -halfD) {
+        rel.z = -halfD;
+        velocity.z = Math.abs(velocity.z);
+      }
+
+      // Y方向（床・天井）
+      if (rel.y < 0) {
+        rel.y = 0;
+        velocity.y = Math.abs(velocity.y);
+      } else if (rel.y > roomSize.height) {
+        rel.y = roomSize.height;
+        velocity.y = -Math.abs(velocity.y);
+      }
+
+      pos.copy(rel.add(roomOrigin));
+    }
+
+    // 距離からスケール値を計算
+    function distanceToScale(distance) {
+      const t = Math.max(0, Math.min(1,
+        (distance - SCALE_NEAR_DIST) / (SCALE_FAR_DIST - SCALE_NEAR_DIST)
+      ));
+      return SCALE_AT_NEAR + t * (SCALE_AT_FAR - SCALE_AT_NEAR);
+    }
+
+    /* ============================================================
+       wifi-mover コンポーネント（速度ベース + 壁反射）
+       ============================================================ */
+    AFRAME.registerComponent('wifi-mover', {
+      init: function () {
+        this.velocity = new THREE.Vector3(
+          randBetween(-MOVE_SPEED, MOVE_SPEED),
+          randBetween(-MOVE_SPEED * 0.5, MOVE_SPEED * 0.5),
+          randBetween(-MOVE_SPEED, MOVE_SPEED)
+        );
+        this.stopped = false;
+        this.frozen = false;
+        this.cameraEl = null;
+        this.initialized = false;
+      },
+
+      tick: function (time, delta) {
+        if (this.stopped || gameCaught) return;
+        if (!gameStarted) return;
+
+        const dt = delta / 1000;
+
+        if (!this.cameraEl) {
+          this.cameraEl = document.querySelector('[camera]');
+          if (!this.cameraEl) return;
+        }
+
+        // 初回：部屋内のランダム位置に配置
+        if (!this.initialized) {
+          const startPos = generateRandomPositionInRoom();
+          this.el.object3D.position.copy(startPos);
+          this.initialized = true;
+          return;
+        }
+
+        // プレイヤーが近づいたら凍結（FREEZE_DISTANCE以下なら停止）
+        const cameraPos = new THREE.Vector3();
+        this.cameraEl.object3D.getWorldPosition(cameraPos);
+        const distToCamera = this.el.object3D.position.distanceTo(cameraPos);
+        if (distToCamera <= FREEZE_DISTANCE) {
+          this.frozen = true;
+        } else {
+          this.frozen = false;
+        }
+
+        if (this.frozen) return;
+
+        // 速度ベースで位置更新
+        const pos = this.el.object3D.position;
+        pos.add(this.velocity.clone().multiplyScalar(dt));
+
+        // 壁との衝突判定＋反射
+        bounceOffWalls(pos, this.velocity);
+      },
+
+      resetPosition: function () {
+        // 部屋サイズ変更時などに呼ばれる
+        const newPos = generateRandomPositionInRoom();
+        this.el.object3D.position.copy(newPos);
+        // 速度ベクトルもリセット
+        this.velocity.set(
+          randBetween(-MOVE_SPEED, MOVE_SPEED),
+          randBetween(-MOVE_SPEED * 0.5, MOVE_SPEED * 0.5),
+          randBetween(-MOVE_SPEED, MOVE_SPEED)
+        );
+      },
+
+      stopMoving: function () {
+        this.stopped = true;
+      }
+    });
+
+    /* ============================================================
+       motion-walk コンポーネント（疑似6DoF：歩行検知）
+       ============================================================ */
+    AFRAME.registerComponent('motion-walk', {
+      schema: {
+        enabled: { default: false },
+        threshold: { default: 2.0 }, // 加速度変化の検知閾値（調整必要）
+        stepSize: { default: 0.5 },  // 一歩で進む距離(m)
+        debug: { default: false }    // デバッグ表示
+      },
+
+      init: function () {
+        this.accelY = 0;
+        this.lastAccelY = 0;
+        this.peakY = 0;
+        this.stepCooldown = 0;
+        this.debugEl = document.getElementById('debug-info');
+
+        this.onDeviceMotion = this.onDeviceMotion.bind(this);
+
+        // Androidなど許可不要な場合は即時リスナー登録（有効化はスキーマで制御）
+        window.addEventListener('devicemotion', this.onDeviceMotion);
+      },
+
+      enable: function () {
+        this.data.enabled = true;
+        if (this.data.debug && this.debugEl) {
+          this.debugEl.style.display = 'block';
+        }
+      },
+
+      onDeviceMotion: function (event) {
+        if (!this.data.enabled) return;
+
+        // 重力加速度を含む加速度を取得
+        const acc = event.accelerationIncludingGravity;
+        if (!acc) return;
+
+        // ローパスフィルタ（簡易）
+        const alpha = 0.8;
+        this.accelY = alpha * this.accelY + (1 - alpha) * (acc.y || 0);
+      },
+
+      tick: function (time, delta) {
+        if (!this.data.enabled || gameCaught) return;
+
+        const dt = delta / 1000;
+
+        // 歩行動作（上下動）の検出ロジック
+        // 単純なピーク検出: 前回より下がったタイミングでピークとみなす
+        // かつ、閾値以上の変化があった場合
+
+        // 変化量
+        const deltaY = Math.abs(this.accelY - this.lastAccelY);
+
+        // クールダウン中は無視（連続検知防止）
+        if (this.stepCooldown > 0) {
+          this.stepCooldown -= dt;
+        } else {
+          // 簡易ロジック: 一定以上の変化があったら「一歩」とみなす
+          // ※実機調整が必要な部分。ここでは「閾値以上変化し、かつピークを越えた」と仮定
+          if (deltaY > this.data.threshold) {
+            this.takeStep();
+            this.stepCooldown = 0.6; // 次の一歩までの最低時間（秒）
+          }
+        }
+
+        this.lastAccelY = this.accelY;
+
+        if (this.data.debug && this.debugEl) {
+          this.debugEl.textContent = `AccelY: ${this.accelY.toFixed(2)} | Step: ${this.stepCooldown > 0 ? 'Wait' : 'Ready'}`;
+        }
+      },
+
+      takeStep: function () {
+        // カメラの向いている方向（XZ平面）に進む
+        const el = this.el;
+        const direction = new THREE.Vector3();
+
+        // カメラの正面ベクトルを取得
+        el.sceneEl.camera.getWorldDirection(direction);
+        direction.y = 0; // 上下移動はしない
+        direction.normalize();
+
+        // 現在位置に加算
+        const pos = el.getAttribute('position');
+        const newPos = {
+          x: pos.x + direction.x * this.data.stepSize,
+          y: pos.y, // Y座標は変えない
+          z: pos.z + direction.z * this.data.stepSize
+        };
+
+        // 部屋の範囲内かチェック（簡易版）
+        // ※厳密には壁衝突判定を入れるべきだが、プレイヤーは壁を突き抜けない前提とする
+        // 一応部屋の外に出過ぎないようにクランプ
+        const halfW = roomSize.width / 2;
+        const halfD = roomSize.depth / 2;
+
+        // 原点オフセットを考慮して相対位置で判定
+        const relX = newPos.x - roomOrigin.x;
+        const relZ = newPos.z - roomOrigin.z;
+
+        if (relX > halfW) newPos.x = roomOrigin.x + halfW;
+        if (relX < -halfW) newPos.x = roomOrigin.x - halfW;
+        if (relZ > halfD) newPos.z = roomOrigin.z + halfD;
+        if (relZ < -halfD) newPos.z = roomOrigin.z - halfD;
+
+        el.setAttribute('position', newPos);
+
+        // 演出：少し揺らす（歩いている感）
+        // 今回省略
+
+        console.log('Step taken!', newPos);
+
+        // デバッグ表示更新
+        if (this.data.debug && this.debugEl) {
+          this.debugEl.style.color = '#00ff00';
+          setTimeout(() => { if (this.debugEl) this.debugEl.style.color = 'rgba(255,255,255,0.7)'; }, 200);
+        }
+      }
+    });
+
+    /* ============================================================
+       trail-system コンポーネント
+       ============================================================ */
+    AFRAME.registerComponent('trail-system', {
+      init: function () {
+        this.trails = [];
+        this.lastSpawn = 0;
+        this.stopped = false;
+        this.sceneEl = this.el.sceneEl;
+      },
+
+      tick: function (time, delta) {
+        const now = time / 1000;
+
+        if (!this.stopped && !gameCaught && gameStarted) {
+          if (now - this.lastSpawn >= TRAIL_INTERVAL) {
+            this.spawnTrail(now);
+            this.lastSpawn = now;
+          }
+        }
+
+        for (let i = this.trails.length - 1; i >= 0; i--) {
+          const trail = this.trails[i];
+          const age = now - trail.createdAt;
+
+          if (age >= TRAIL_LIFETIME) {
+            if (trail.el.parentNode) {
+              trail.el.parentNode.removeChild(trail.el);
+            }
+            this.trails.splice(i, 1);
+            continue;
+          }
+
+          const opacity = 1.0 - (age / TRAIL_LIFETIME);
+          const mesh = trail.el.getObject3D('mesh');
+          if (mesh && mesh.material) {
+            mesh.material.opacity = opacity * 0.6;
+          }
+        }
+      },
+
+      spawnTrail: function (now) {
+        while (this.trails.length >= TRAIL_MAX_COUNT) {
+          const oldest = this.trails.shift();
+          if (oldest.el.parentNode) {
+            oldest.el.parentNode.removeChild(oldest.el);
+          }
+        }
+
+        const wifiPos = this.el.object3D.position;
+        const trailEl = document.createElement('a-sphere');
+        trailEl.setAttribute('radius', '0.06');
+        trailEl.setAttribute('color', '#00ccff');
+        trailEl.setAttribute('material', 'transparent: true; opacity: 0.6');
+        trailEl.setAttribute('position', `${wifiPos.x} ${wifiPos.y} ${wifiPos.z}`);
+
+        this.sceneEl.appendChild(trailEl);
+        this.trails.push({ el: trailEl, createdAt: now });
+      },
+
+      stopTrails: function () {
+        this.stopped = true;
+      }
+    });
+
+    /* ============================================================
+       catch-checker コンポーネント
+       距離監視 + ビープ音 + 方向矢印 + スケーリング + ゲット判定
+       ============================================================ */
+    AFRAME.registerComponent('catch-checker', {
+      init: function () {
+        this.wifiEl = null;
+        this.distText = document.getElementById('dist-text');
+        this.distTrend = document.getElementById('dist-trend');
+        this.proximityBar = document.getElementById('proximity-bar');
+        this.hudInfo = document.getElementById('hud-info');
+        this._prevDistance = null;
+        this._camWorldPos = new THREE.Vector3();
+        this._wifiWorldPos = new THREE.Vector3();
+        this._camDir = new THREE.Vector3();
+        this._toWifi = new THREE.Vector3();
+      },
+
+      tick: function (time) {
+        if (gameCaught) {
+          if (this.hudInfo) this.hudInfo.style.display = 'none';
+          return;
+        }
+        if (!gameStarted) return;
+
+        if (!this.wifiEl) {
+          this.wifiEl = document.getElementById('wifi-entity');
+          if (!this.wifiEl) return;
+        }
+
+        const now = time / 1000;
+
+        // 座標取得
+        this.el.object3D.getWorldPosition(this._camWorldPos);
+        const wifiPos = this.wifiEl.object3D.position;
+        this._wifiWorldPos.copy(wifiPos);
+
+        const dist = this._camWorldPos.distanceTo(this._wifiWorldPos);
+
+        // --- 距離テキスト ---
+        if (this.distText) {
+          this.distText.textContent = dist.toFixed(1) + 'm';
+        }
+
+        // --- 距離トレンド（近づいている/遠ざかっている） ---
+        const TREND_THRESHOLD = 0.05;
+        if (this.distTrend && this._prevDistance !== null) {
+          const diff = this._prevDistance - dist;
+          if (diff > TREND_THRESHOLD) {
+            this.distTrend.textContent = '↑ 近づいています';
+            this.distTrend.className = 'approaching';
+            this.distTrend.style.display = '';
+          } else if (diff < -TREND_THRESHOLD) {
+            this.distTrend.textContent = '↓ 遠ざかっています';
+            this.distTrend.className = 'receding';
+            this.distTrend.style.display = '';
+          } else {
+            this.distTrend.style.display = 'none';
+          }
+        }
+        this._prevDistance = dist;
+
+        // --- 近接バー（0〜100%） ---
+        if (this.proximityBar) {
+          const pct = Math.max(0, Math.min(100,
+            (1 - (dist - CATCH_DISTANCE) / (BEEP_START_DISTANCE - CATCH_DISTANCE)) * 100
+          ));
+          this.proximityBar.style.width = pct + '%';
+        }
+
+        // --- カメラ前方からの相対角度を計算 ---
+        const angleDeg = this.getAngleToWifi();
+        const absAngle = Math.abs(angleDeg);
+
+        // --- 距離に応じたスケーリング ---
+        const s = distanceToScale(dist);
+        this.wifiEl.object3D.scale.set(s, s, s);
+
+        // --- 近接ビープ音 ---
+        updateProximityBeep(dist, now);
+
+        // --- ゲット判定（距離＋視界内チェック） ---
+        if (dist <= CATCH_DISTANCE && absAngle <= CATCH_ANGLE) {
+          this.onCaught();
+        }
+      },
+
+      // カメラ前方からWi-Fiへの相対角度(度)を返す
+      getAngleToWifi: function () {
+        this._camDir.set(0, 0, -1);
+        this._camDir.applyQuaternion(this.el.object3D.quaternion);
+        const camAngle = Math.atan2(this._camDir.x, this._camDir.z);
+
+        this._toWifi.subVectors(this._wifiWorldPos, this._camWorldPos);
+        const wifiAngle = Math.atan2(this._toWifi.x, this._toWifi.z);
+
+        let relAngle = wifiAngle - camAngle;
+        while (relAngle > Math.PI) relAngle -= Math.PI * 2;
+        while (relAngle < -Math.PI) relAngle += Math.PI * 2;
+
+        return relAngle * (180 / Math.PI);
+      },
+
+      onCaught: function () {
+        gameCaught = true;
+        console.log('GOT WIFI!');
+
+        const wifiEl = this.wifiEl;
+
+        // Wi-Fi移動停止
+        if (wifiEl.components['wifi-mover']) {
+          wifiEl.components['wifi-mover'].stopMoving();
+        }
+        // 軌跡生成停止
+        if (wifiEl.components['trail-system']) {
+          wifiEl.components['trail-system'].stopTrails();
+        }
+
+        // ゲット効果音
+        playCatchSound();
+
+        // 画面フラッシュ演出
+        const flash = document.getElementById('catch-flash');
+        flash.classList.add('active');
+        setTimeout(function () {
+          flash.classList.remove('active');
+        }, 300);
+
+        // Wi-Fiを大きく光らせてから消す（見える演出）
+        const currentScale = wifiEl.object3D.scale.x;
+        wifiEl.setAttribute('animation__grow', {
+          property: 'scale',
+          to: `${currentScale * 1.8} ${currentScale * 1.8} ${currentScale * 1.8}`,
+          dur: 300,
+          easing: 'easeOutQuad'
+        });
+
+        // 0.3秒後に縮小して消す
+        setTimeout(function () {
+          wifiEl.setAttribute('animation__shrink', {
+            property: 'scale',
+            to: '0.01 0.01 0.01',
+            dur: 600,
+            easing: 'easeInQuad'
+          });
+        }, 300);
+
+        // UI更新（少し遅延させて演出後に表示）
+        setTimeout(function () {
+          const statusBar = document.getElementById('status-bar');
+          const statusMessage = document.getElementById('status-message');
+          const wifiInfo = document.getElementById('wifi-info');
+
+          statusBar.style.display = 'block';
+          statusBar.classList.add('caught');
+          statusMessage.textContent = 'Wi-Fiを捕まえました！';
+          document.getElementById('ssid-value').textContent = WIFI_SSID;
+          document.getElementById('pass-value').textContent = WIFI_PASS;
+          wifiInfo.style.display = 'block';
+        }, 600);
+      }
+    });
+
+    /* ============================================================
+       wifi-rotate コンポーネント
+       ============================================================ */
+    AFRAME.registerComponent('wifi-rotate', {
+      tick: function (time, delta) {
+        if (gameCaught) return;
+        this.el.object3D.rotation.y += (delta / 1000) * 1.5;
+      }
+    });
+
+    /* ============================================================
+       boundary-box-updater コンポーネント
+       ============================================================ */
+    AFRAME.registerComponent('boundary-box-updater', {
+      init: function () {
+        this.positioned = false;
+        this.updateBox();
+      },
+
+      updateBox: function () {
+        // roomOriginの中心、Y軸は高さの半分オフセット
+        const centerY = roomOrigin.y + roomSize.height / 2;
+        this.el.setAttribute('position', {
+          x: roomOrigin.x,
+          y: centerY,
+          z: roomOrigin.z
+        });
+
+        // geometryを直接更新
+        this.el.setAttribute('geometry', {
+          primitive: 'box',
+          width: roomSize.width,
+          height: roomSize.height,
+          depth: roomSize.depth
+        });
+      },
+
+      tick: function () {
+        if (!this.positioned && roomOrigin && roomOrigin.lengthSq() > 0) {
+          this.updateBox();
+          this.positioned = true;
+        }
+      }
+    });
+  </script>
+
+  <!-- ========================================
+       A-Frame ARシーン
+       ======================================== -->
+  <a-scene embedded
+    arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+    renderer="logarithmicDepthBuffer: true; colorManagement: true;" vr-mode-ui="enabled: false">
+
+    <!-- ユーザー（カメラ） -->
+    <!-- motion-walkコンポーネントを追加 -->
+    <a-entity camera look-controls wasd-controls position="0 1.6 0" catch-checker
+      motion-walk="threshold: 1.5; stepSize: 0.6; debug: true"></a-entity>
+
+    <!-- Wi-Fi飛行範囲の視覚化 -->
+    <a-entity id="boundary-box" boundary-box-updater
+      material="color: #ff0000; transparent: true; opacity: 0.4; side: double; depthTest: false"
+      visible="false"></a-entity>
+
+    <!-- Wi-Fiオブジェクト -->
+    <a-entity id="wifi-entity" wifi-mover trail-system wifi-rotate position="0 0 -4" visible="false">
+      <!-- アンテナ（リング） -->
+      <a-torus color="#00ddff" radius="0.45" radius-tubular="0.03" arc="90" rotation="0 0 45"
+        material="transparent: true; opacity: 0.9"></a-torus>
+      <a-torus color="#44eeff" radius="0.3" radius-tubular="0.03" arc="90" rotation="0 0 45"
+        material="transparent: true; opacity: 0.9"></a-torus>
+      <a-torus color="#88ffff" radius="0.15" radius-tubular="0.03" arc="90" rotation="0 0 45"
+        material="transparent: true; opacity: 0.9"></a-torus>
+      <!-- 本体（球） -->
+      <a-sphere color="#ffffff" radius="0.06" position="0 -0.08 0"
+        material="transparent: true; opacity: 0.95"></a-sphere>
+      <!-- 発光エフェクト -->
+      <a-sphere color="#00ccff" radius="0.55" material="transparent: true; opacity: 0.08; side: double"></a-sphere>
+    </a-entity>
+
+    <!-- ライト -->
+    <a-light type="ambient" color="#ffffff" intensity="0.5"></a-light>
+    <a-light type="directional" color="#ffffff" intensity="1" position="-1 2 1"></a-light>
+
+  </a-scene>
+</body>
+
+</html>

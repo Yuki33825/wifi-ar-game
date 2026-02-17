@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>脱走Wi-Fiを追いかけろ！ (iOS版)</title>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: #000;
+      color: #fff;
+    }
+
+    /* カメラ映像（最背面） */
+    #camera-bg {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      background: #111;
+    }
+
+    /* Three.js canvas（透過・カメラ映像の前面） */
+    #ar-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+    }
+
+    /* AR開始前の画面 */
+    #start-screen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0a0a2e 0%, #1a1a4e 100%);
+      z-index: 10000;
+    }
+    #start-screen h1 {
+      font-size: 22px;
+      margin-bottom: 8px;
+      text-align: center;
+      padding: 0 20px;
+    }
+    #start-screen .subtitle {
+      font-size: 13px;
+      color: #00ff88;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    #start-screen .note {
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 32px;
+      text-align: center;
+      padding: 0 32px;
+      line-height: 1.6;
+    }
+    #ar-button {
+      padding: 16px 48px;
+      font-size: 18px;
+      font-weight: bold;
+      border: none;
+      border-radius: 12px;
+      background: #00ff88;
+      color: #000;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    #ar-button:active { transform: scale(0.95); }
+    #ar-button:disabled {
+      background: #555;
+      color: #999;
+      cursor: not-allowed;
+    }
+    #webxr-link {
+      margin-top: 20px;
+      text-align: center;
+    }
+    #webxr-link a {
+      display: inline-block;
+      padding: 10px 24px;
+      background: rgba(0, 221, 255, 0.3);
+      color: #00ddff;
+      text-decoration: none;
+      border-radius: 20px;
+      font-size: 13px;
+      border: 1px solid rgba(0,221,255,0.5);
+    }
+
+    /* AR中のオーバーレイ */
+    #overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+
+    #title-bar {
+      position: fixed;
+      top: 24px; left: 16px; right: 16px;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.55);
+      border-radius: 12px;
+      padding: 10px 16px;
+      pointer-events: auto;
+    }
+    #title-bar h1 {
+      font-size: 16px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    }
+    #title-bar .subtitle {
+      font-size: 11px;
+      color: #00ff88;
+      margin-top: 2px;
+    }
+    #title-bar a {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 12px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 20px;
+      font-size: 11px;
+    }
+
+    /* 配置ガイド */
+    #placement-hint {
+      position: fixed;
+      bottom: 100px;
+      left: 0; right: 0;
+      text-align: center;
+      pointer-events: none;
+      display: none;
+    }
+    #placement-hint p {
+      display: inline-block;
+      padding: 12px 24px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 24px;
+      font-size: 15px;
+      font-weight: bold;
+    }
+    #placement-hint .emoji { font-size: 20px; }
+
+    /* 部屋サイズ設定UI */
+    #room-config {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px;
+      z-index: 9999;
+      pointer-events: auto;
+      font-size: 14px;
+      width: 300px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: none;
+    }
+    #room-config h3 {
+      margin-bottom: 16px;
+      font-size: 18px;
+      color: #00ddff;
+      text-align: center;
+    }
+    .config-row { margin-bottom: 16px; }
+    .config-row label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .config-row input[type=range] {
+      width: 100%;
+      accent-color: #00ddff;
+    }
+    #room-config button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #room-config button#start-game {
+      background: #00ff88;
+      color: #000;
+    }
+    #room-config button#start-game:active {
+      background: #00cc66;
+    }
+
+    /* 距離HUD */
+    #hud-info {
+      position: fixed;
+      bottom: 120px;
+      left: 0; right: 0;
+      text-align: center;
+      pointer-events: none;
+      display: none;
+    }
+    #dist-text {
+      font-size: 22px;
+      font-weight: bold;
+      text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+    }
+    #dist-trend {
+      margin-top: 4px;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    #dist-trend.approaching { color: #44ff88; }
+    #dist-trend.receding { color: #ff6666; }
+    #proximity-bar-wrap {
+      margin: 8px auto 0;
+      width: 180px;
+      height: 8px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #proximity-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ff4444, #ffaa00, #00ff88);
+      border-radius: 4px;
+      transition: width 0.2s;
+    }
+    /* キャッチヒント */
+    #catch-hint {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #00ff88;
+      font-weight: bold;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #catch-hint.visible { opacity: 1; }
+
+    /* ステータスバー */
+    #status-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 16px; right: 16px;
+      text-align: center;
+      background: rgba(0, 180, 80, 0.85);
+      border-radius: 12px;
+      padding: 16px;
+      pointer-events: auto;
+      display: none;
+    }
+    #status-message {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    #wifi-info { display: none; margin-top: 12px; font-size: 14px; line-height: 1.8; }
+    #wifi-info .label { opacity: 0.8; }
+    #wifi-info .value {
+      font-weight: bold;
+      font-size: 18px;
+      background: rgba(255,255,255,0.15);
+      padding: 2px 10px;
+      border-radius: 6px;
+      letter-spacing: 1px;
+    }
+    #wifi-info .hint { margin-top: 12px; font-size: 12px; opacity: 0.8; }
+
+    /* フラッシュ演出 */
+    #catch-flash {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.9);
+      z-index: 10001;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    #catch-flash.active { opacity: 1; }
+
+    /* クロスヘア（画面中央）*/
+    #crosshair {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 40px; height: 40px;
+      pointer-events: none;
+      z-index: 9998;
+      display: none;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(255,255,255,0.7);
+    }
+    #crosshair::before {
+      width: 2px; height: 16px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    #crosshair::after {
+      width: 16px; height: 2px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- フラッシュ演出 -->
+  <div id="catch-flash"></div>
+
+  <!-- カメラ映像（背景） -->
+  <video id="camera-bg" autoplay playsinline muted></video>
+
+  <!-- Three.js 描画先 canvas（透過） -->
+  <canvas id="ar-canvas"></canvas>
+
+  <!-- クロスヘア（ゲーム中の照準） -->
+  <div id="crosshair"></div>
+
+  <!-- AR開始前の画面 -->
+  <div id="start-screen">
+    <h1>脱走したWi-Fiを追いかけろ！</h1>
+    <p class="subtitle">iOS 擬似AR版</p>
+    <p class="note">
+      カメラとセンサーを使ったAR体験です。<br>
+      カメラ・モーション許可が必要です。
+    </p>
+    <button id="ar-button">AR開始</button>
+    <div id="webxr-link">
+      <a href="/webxr">Android版（高精度WebXR）はこちら</a>
+    </div>
+  </div>
+
+  <!-- AR中オーバーレイ -->
+  <div id="overlay">
+    <div id="title-bar">
+      <h1>脱走したWi-Fiを追いかけろ！</h1>
+      <div class="subtitle">iOS 擬似AR版</div>
+      <a href="/">↩ 通常版に戻る</a>
+    </div>
+
+    <div id="placement-hint">
+      <p><span class="emoji">👆</span> 床付近をタップしてプレイエリアを配置</p>
+    </div>
+
+    <div id="room-config">
+      <h3>プレイエリア設定</h3>
+      <div class="config-row">
+        <label>幅 (Width): <span id="val-width">5.0m</span></label>
+        <input type="range" id="room-width" min="2.0" max="10.0" step="0.5" value="5.0">
+      </div>
+      <div class="config-row">
+        <label>奥行 (Depth): <span id="val-depth">6.0m</span></label>
+        <input type="range" id="room-depth" min="2.0" max="10.0" step="0.5" value="6.0">
+      </div>
+      <div class="config-row">
+        <label>高さ (Height): <span id="val-height">2.5m</span></label>
+        <input type="range" id="room-height" min="1.5" max="5.0" step="0.1" value="2.5">
+      </div>
+      <button id="start-game">ゲーム開始</button>
+    </div>
+
+    <div id="hud-info">
+      <div id="dist-text"></div>
+      <div id="dist-trend"></div>
+      <div id="proximity-bar-wrap">
+        <div id="proximity-bar"></div>
+      </div>
+      <div id="catch-hint">画面中央に照準を合わせてタップ！</div>
+    </div>
+
+    <div id="status-bar">
+      <p id="status-message"></p>
+      <div id="wifi-info">
+        <div><span class="label">SSID：</span><span class="value" id="ssid-value"></span></div>
+        <div style="margin-top:6px"><span class="label">PASS：</span><span class="value" id="pass-value"></span></div>
+        <p class="hint">設定アプリを開いて、このWi-Fiに接続してください</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- three.js (ES Module) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    /* ============================================================
+       定数
+       ============================================================ */
+    const MOVE_SPEED    = 0.8;
+    const CATCH_DISTANCE      = 1.5;   // WebXR版より少し大きめ
+    const FREEZE_DISTANCE     = CATCH_DISTANCE;
+    const TRAIL_INTERVAL      = 0.15;
+    const TRAIL_LIFETIME      = 3.0;
+    const TRAIL_MAX_COUNT     = 80;
+    const WIFI_SSID           = 'MEETING_WIFI';
+    const WIFI_PASS           = 'password123';
+    const BEEP_FREQ_FAR       = 300;
+    const BEEP_FREQ_NEAR      = 1200;
+    const BEEP_INTERVAL_FAR   = 1.5;
+    const BEEP_INTERVAL_NEAR  = 0.1;
+    const BEEP_START_DISTANCE = 6.0;
+    const BEEP_DURATION       = 0.08;
+    const SCALE_AT_FAR        = 0.4;
+    const SCALE_AT_NEAR       = 1.5;
+    const SCALE_FAR_DIST      = 6.0;
+    const SCALE_NEAR_DIST     = 1.0;
+
+    // 歩行検出
+    const STEP_THRESHOLD  = 14;   // m/s² (acc magnitude spike)
+    const STEP_DISTANCE   = 0.4;  // m per detected step
+    const STEP_COOLDOWN   = 350;  // ms
+
+    /* ============================================================
+       ゲーム状態
+       ============================================================ */
+    let gameCaught  = false;
+    let gameStarted = false;
+    let placed      = false;
+    let arStarted   = false;
+    const roomSize = { width: 5.0, depth: 6.0, height: 2.5 };
+
+    // カメラ位置（疑似6DoF：歩行検出で更新）
+    const cameraPos = new THREE.Vector3(0, 1.5, 0);
+
+    // DeviceOrientation クォータニオン
+    const deviceQ  = new THREE.Quaternion();
+    const corrQ    = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // 縦持ち補正
+    let   oriReady = false;
+
+    /* ============================================================
+       Web Audio API
+       ============================================================ */
+    let audioCtx     = null;
+    let audioUnlocked = false;
+    let lastBeepTime  = 0;
+
+    function initAudio() {
+      if (audioCtx) return;
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { console.warn('AudioContext not supported', e); }
+    }
+
+    function unlockAudio() {
+      if (audioUnlocked || !audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.01);
+      audioUnlocked = true;
+    }
+
+    function playBeep(frequency, volume) {
+      if (!audioCtx || gameCaught) return;
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = frequency;
+      gain.gain.value = volume;
+      gain.gain.setTargetAtTime(0, audioCtx.currentTime + BEEP_DURATION * 0.7, 0.01);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + BEEP_DURATION);
+    }
+
+    function playCatchSound() {
+      if (!audioCtx) return;
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+      osc.frequency.linearRampToValueAtTime(1600, audioCtx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 0.05);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    function updateProximityBeep(distance, now) {
+      if (!audioCtx || gameCaught || distance > BEEP_START_DISTANCE) return;
+      const t        = Math.max(0, Math.min(1, (distance - CATCH_DISTANCE) / (BEEP_START_DISTANCE - CATCH_DISTANCE)));
+      const interval = BEEP_INTERVAL_NEAR + t * (BEEP_INTERVAL_FAR - BEEP_INTERVAL_NEAR);
+      if (now - lastBeepTime >= interval) {
+        const freq = BEEP_FREQ_NEAR + t * (BEEP_FREQ_FAR - BEEP_FREQ_NEAR);
+        const vol  = 0.05 + (1 - t) * 0.2;
+        playBeep(freq, vol);
+        lastBeepTime = now;
+      }
+    }
+
+    /* ============================================================
+       ユーティリティ
+       ============================================================ */
+    function randBetween(min, max) { return Math.random() * (max - min) + min; }
+
+    function distanceToScale(distance) {
+      const t = Math.max(0, Math.min(1, (distance - SCALE_NEAR_DIST) / (SCALE_FAR_DIST - SCALE_NEAR_DIST)));
+      return SCALE_AT_NEAR + t * (SCALE_AT_FAR - SCALE_AT_NEAR);
+    }
+
+    /* ============================================================
+       Three.js シーン初期化
+       ============================================================ */
+    const canvas = document.getElementById('ar-canvas');
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 200);
+    camera.position.copy(cameraPos);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0); // 完全透過（video が背景に見える）
+
+    // ライティング
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(-1, 2, 1);
+    scene.add(dirLight);
+
+    // リサイズ対応
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /* ============================================================
+       レティクル（仮想床上の配置インジケーター）
+       ============================================================ */
+    const reticleGroup = new THREE.Group();
+    const ringGeo = new THREE.RingGeometry(0.12, 0.15, 32).rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide });
+    reticleGroup.add(new THREE.Mesh(ringGeo, ringMat));
+    const dotGeo = new THREE.CircleGeometry(0.02, 16).rotateX(-Math.PI / 2);
+    reticleGroup.add(new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide })));
+    reticleGroup.visible = false;
+    scene.add(reticleGroup);
+
+    // レティクル計算用
+    const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0 水平面
+    const raycaster  = new THREE.Raycaster();
+
+    function updateReticle() {
+      // 画面下側1/3あたりに照準を当てて床を推定
+      const ndc = new THREE.Vector2(0, -0.5);
+      raycaster.setFromCamera(ndc, camera);
+      const hit = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(floorPlane, hit)) {
+        reticleGroup.position.copy(hit);
+        reticleGroup.visible = true;
+      } else {
+        reticleGroup.visible = false;
+      }
+    }
+
+    /* ============================================================
+       roomRoot（ワールド固定のアンカーグループ）
+       ============================================================ */
+    const roomRoot = new THREE.Group();
+    roomRoot.visible = false;
+    scene.add(roomRoot);
+
+    /* ============================================================
+       境界ボックス
+       ============================================================ */
+    let boundaryWireframe = null;
+    let boundaryFaces     = null;
+
+    function createBoundaryBox() {
+      if (boundaryWireframe) roomRoot.remove(boundaryWireframe);
+      const geo = new THREE.BoxGeometry(roomSize.width, roomSize.height, roomSize.depth);
+      const mat = new THREE.LineBasicMaterial({ color: 0x00ddff, transparent: true, opacity: 0.3 });
+      boundaryWireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geo), mat);
+      boundaryWireframe.position.y = roomSize.height / 2;
+      roomRoot.add(boundaryWireframe);
+    }
+
+    function createBoundaryFaces() {
+      if (boundaryFaces) roomRoot.remove(boundaryFaces);
+      const geo = new THREE.BoxGeometry(roomSize.width, roomSize.height, roomSize.depth);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x00ddff, transparent: true, opacity: 0.05,
+        side: THREE.DoubleSide, depthWrite: false
+      });
+      boundaryFaces = new THREE.Mesh(geo, mat);
+      boundaryFaces.position.y = roomSize.height / 2;
+      roomRoot.add(boundaryFaces);
+    }
+
+    createBoundaryBox();
+    createBoundaryFaces();
+
+    /* ============================================================
+       Wi-Fiオブジェクト（roomRoot ローカル座標で移動）
+       ============================================================ */
+    const wifiGroup = new THREE.Group();
+    wifiGroup.visible = false;
+
+    const torus1 = new THREE.Mesh(
+      new THREE.TorusGeometry(0.45, 0.03, 8, 32, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x00ddff, transparent: true, opacity: 0.9 })
+    );
+    torus1.rotation.set(0, 0, Math.PI / 4);
+    wifiGroup.add(torus1);
+
+    const torus2 = new THREE.Mesh(
+      new THREE.TorusGeometry(0.3, 0.03, 8, 32, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x44eeff, transparent: true, opacity: 0.9 })
+    );
+    torus2.rotation.set(0, 0, Math.PI / 4);
+    wifiGroup.add(torus2);
+
+    const torus3 = new THREE.Mesh(
+      new THREE.TorusGeometry(0.15, 0.03, 8, 32, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x88ffff, transparent: true, opacity: 0.9 })
+    );
+    torus3.rotation.set(0, 0, Math.PI / 4);
+    wifiGroup.add(torus3);
+
+    const centerSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+    );
+    centerSphere.position.y = -0.08;
+    wifiGroup.add(centerSphere);
+
+    const glowSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x00ccff, transparent: true, opacity: 0.08, side: THREE.DoubleSide })
+    );
+    wifiGroup.add(glowSphere);
+
+    roomRoot.add(wifiGroup);
+
+    const wifiVelocity = new THREE.Vector3(
+      randBetween(-MOVE_SPEED, MOVE_SPEED),
+      randBetween(-MOVE_SPEED * 0.5, MOVE_SPEED * 0.5),
+      randBetween(-MOVE_SPEED, MOVE_SPEED)
+    );
+
+    function resetWifiPosition() {
+      const halfW = roomSize.width / 2;
+      const halfD = roomSize.depth / 2;
+      wifiGroup.position.set(
+        randBetween(-halfW + 0.3, halfW - 0.3),
+        randBetween(0.3, roomSize.height - 0.3),
+        randBetween(-halfD + 0.3, halfD - 0.3)
+      );
+      wifiVelocity.set(
+        randBetween(-MOVE_SPEED, MOVE_SPEED),
+        randBetween(-MOVE_SPEED * 0.5, MOVE_SPEED * 0.5),
+        randBetween(-MOVE_SPEED, MOVE_SPEED)
+      );
+    }
+
+    let wifiStopped = false;
+
+    function updateWifi(dt) {
+      if (wifiStopped || gameCaught || !gameStarted) return;
+
+      const wifiWorldPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(wifiWorldPos);
+      const distToCamera = wifiWorldPos.distanceTo(camera.position);
+      if (distToCamera <= FREEZE_DISTANCE) return;
+
+      const pos = wifiGroup.position;
+      pos.addScaledVector(wifiVelocity, dt);
+
+      const halfW = roomSize.width / 2;
+      const halfD = roomSize.depth / 2;
+
+      if (pos.x >  halfW) { pos.x =  halfW; wifiVelocity.x = -Math.abs(wifiVelocity.x); }
+      if (pos.x < -halfW) { pos.x = -halfW; wifiVelocity.x =  Math.abs(wifiVelocity.x); }
+      if (pos.z >  halfD) { pos.z =  halfD; wifiVelocity.z = -Math.abs(wifiVelocity.z); }
+      if (pos.z < -halfD) { pos.z = -halfD; wifiVelocity.z =  Math.abs(wifiVelocity.z); }
+      if (pos.y < 0)               { pos.y = 0;               wifiVelocity.y =  Math.abs(wifiVelocity.y); }
+      if (pos.y > roomSize.height) { pos.y = roomSize.height; wifiVelocity.y = -Math.abs(wifiVelocity.y); }
+
+      wifiGroup.rotation.y += dt * 1.5;
+    }
+
+    /* ============================================================
+       軌跡システム
+       ============================================================ */
+    const trails = [];
+    let lastTrailSpawn = 0;
+    let trailsStopped  = false;
+
+    function updateTrails(timeS) {
+      if (!trailsStopped && !gameCaught && gameStarted && timeS - lastTrailSpawn >= TRAIL_INTERVAL) {
+        spawnTrail(timeS);
+        lastTrailSpawn = timeS;
+      }
+      for (let i = trails.length - 1; i >= 0; i--) {
+        const t   = trails[i];
+        const age = timeS - t.createdAt;
+        if (age >= TRAIL_LIFETIME) {
+          scene.remove(t.mesh);
+          t.mesh.geometry.dispose();
+          t.mesh.material.dispose();
+          trails.splice(i, 1);
+          continue;
+        }
+        t.mesh.material.opacity = (1.0 - age / TRAIL_LIFETIME) * 0.6;
+      }
+    }
+
+    function spawnTrail(timeS) {
+      while (trails.length >= TRAIL_MAX_COUNT) {
+        const oldest = trails.shift();
+        scene.remove(oldest.mesh);
+        oldest.mesh.geometry.dispose();
+        oldest.mesh.material.dispose();
+      }
+      const worldPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(worldPos);
+      const geo  = new THREE.SphereGeometry(0.06, 8, 8);
+      const mat  = new THREE.MeshBasicMaterial({ color: 0x00ccff, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(worldPos);
+      scene.add(mesh);
+      trails.push({ mesh, createdAt: timeS });
+    }
+
+    /* ============================================================
+       キャッチ判定 & HUD
+       ============================================================ */
+    const distTextEl     = document.getElementById('dist-text');
+    const distTrendEl    = document.getElementById('dist-trend');
+    const proximityBarEl = document.getElementById('proximity-bar');
+    const hudInfoEl      = document.getElementById('hud-info');
+    const catchHintEl    = document.getElementById('catch-hint');
+    let prevDistance = null;
+
+    // Wi-Fiのスクリーン中央からの距離（NDC）を計算
+    function getWifiScreenRadius() {
+      const worldPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(worldPos);
+      const projected = worldPos.clone().project(camera);
+      // z > 1 なら背後にある
+      if (projected.z > 1) return Infinity;
+      return Math.sqrt(projected.x * projected.x + projected.y * projected.y);
+    }
+
+    function updateCatchChecker(timeS) {
+      if (gameCaught || !gameStarted) return;
+
+      const camPos  = camera.position;
+      const wifiPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(wifiPos);
+      const dist = camPos.distanceTo(wifiPos);
+
+      if (distTextEl) distTextEl.textContent = dist.toFixed(1) + 'm';
+
+      if (distTrendEl && prevDistance !== null) {
+        const diff = prevDistance - dist;
+        if (diff > 0.05) {
+          distTrendEl.textContent = '↑ 近づいています';
+          distTrendEl.className = 'approaching';
+          distTrendEl.style.display = '';
+        } else if (diff < -0.05) {
+          distTrendEl.textContent = '↓ 遠ざかっています';
+          distTrendEl.className = 'receding';
+          distTrendEl.style.display = '';
+        } else {
+          distTrendEl.style.display = 'none';
+        }
+      }
+      prevDistance = dist;
+
+      if (proximityBarEl) {
+        const pct = Math.max(0, Math.min(100,
+          (1 - (dist - CATCH_DISTANCE) / (BEEP_START_DISTANCE - CATCH_DISTANCE)) * 100
+        ));
+        proximityBarEl.style.width = pct + '%';
+      }
+
+      const s = distanceToScale(dist);
+      wifiGroup.scale.set(s, s, s);
+
+      updateProximityBeep(dist, timeS);
+
+      // キャッチ判定：距離 + 画面中央照準
+      const screenRadius = getWifiScreenRadius();
+      const inRange      = dist <= CATCH_DISTANCE;
+      const inSight      = screenRadius < 0.35; // NDC半径
+
+      if (catchHintEl) {
+        catchHintEl.classList.toggle('visible', inSight && dist < BEEP_START_DISTANCE);
+      }
+
+      if (inRange) {
+        // 距離内なら自動キャッチ
+        onCaught();
+      }
+    }
+
+    function onCaught() {
+      gameCaught   = true;
+      wifiStopped  = true;
+      trailsStopped = true;
+
+      playCatchSound();
+
+      const flash = document.getElementById('catch-flash');
+      flash.classList.add('active');
+      setTimeout(() => flash.classList.remove('active'), 300);
+
+      if (hudInfoEl) hudInfoEl.style.display = 'none';
+      document.getElementById('crosshair').style.display = 'none';
+
+      setTimeout(() => {
+        document.getElementById('status-bar').style.display = 'block';
+        document.getElementById('status-message').textContent = 'Wi-Fiを捕まえました！';
+        document.getElementById('ssid-value').textContent = WIFI_SSID;
+        document.getElementById('pass-value').textContent = WIFI_PASS;
+        document.getElementById('wifi-info').style.display = 'block';
+      }, 600);
+    }
+
+    /* ============================================================
+       DeviceOrientation → カメラ回転
+       （Three.js DeviceOrientationControls アルゴリズムを使用）
+       ============================================================ */
+    const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const tmpQ0    = new THREE.Quaternion();
+    const zVec     = new THREE.Vector3(0, 0, 1);
+
+    function onDeviceOrientation(event) {
+      if (event.alpha === null) return;
+      oriReady = true;
+
+      const alpha  = THREE.MathUtils.degToRad(event.alpha  || 0);
+      const beta   = THREE.MathUtils.degToRad(event.beta   || 0);
+      const gamma  = THREE.MathUtils.degToRad(event.gamma  || 0);
+
+      // 画面向き補正（portrait=0, landscape=90 or -90）
+      const orient = THREE.MathUtils.degToRad(
+        (window.screen?.orientation?.angle ?? 0)
+      );
+
+      tmpEuler.set(beta, alpha, -gamma, 'YXZ');
+      tmpQ0.setFromEuler(tmpEuler);
+
+      // 縦持ち補正クォータニオン（corrQ）を掛けて正しい向きに
+      deviceQ.copy(corrQ).multiply(tmpQ0);
+
+      // 画面回転補正
+      if (orient !== 0) {
+        const screenQ = new THREE.Quaternion().setFromAxisAngle(zVec, -orient);
+        deviceQ.multiply(screenQ);
+      }
+
+      camera.quaternion.copy(deviceQ);
+    }
+
+    /* ============================================================
+       DeviceMotion → 歩行検出 → カメラ位置更新
+       ============================================================ */
+    let lastStepTime = 0;
+    const fwdVec = new THREE.Vector3();
+
+    function setupMotionWalk() {
+      window.addEventListener('devicemotion', (event) => {
+        if (!arStarted || !gameStarted) return;
+
+        const acc = event.accelerationIncludingGravity;
+        if (!acc) return;
+
+        const mag = Math.sqrt(
+          (acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2
+        );
+
+        const now = performance.now();
+        if (mag > STEP_THRESHOLD && now - lastStepTime > STEP_COOLDOWN) {
+          lastStepTime = now;
+
+          // カメラの向いている水平方向に STEP_DISTANCE だけ移動
+          fwdVec.set(0, 0, -1).applyQuaternion(camera.quaternion);
+          fwdVec.y = 0;
+          if (fwdVec.lengthSq() > 0.001) {
+            fwdVec.normalize().multiplyScalar(STEP_DISTANCE);
+            cameraPos.add(fwdVec);
+            camera.position.copy(cameraPos);
+          }
+        }
+      });
+    }
+
+    /* ============================================================
+       タッチ処理：配置 + キャッチ
+       ============================================================ */
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      unlockAudio();
+
+      if (!arStarted) return;
+
+      const touch = e.changedTouches[0];
+
+      if (!placed) {
+        // 配置フェーズ：タップ位置から床への ray cast
+        const ndcX = (touch.clientX / window.innerWidth)  * 2 - 1;
+        const ndcY = -(touch.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+        const hit = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(floorPlane, hit)) {
+          roomRoot.position.copy(hit);
+          roomRoot.visible = true;
+          placed = true;
+          reticleGroup.visible = false;
+          document.getElementById('placement-hint').style.display = 'none';
+          document.getElementById('room-config').style.display = 'block';
+        }
+        return;
+      }
+
+      if (gameStarted && !gameCaught) {
+        // ゲーム中：画面中央照準でキャッチ試行
+        const screenRadius = getWifiScreenRadius();
+        const wifiPos = new THREE.Vector3();
+        wifiGroup.getWorldPosition(wifiPos);
+        const dist = camera.position.distanceTo(wifiPos);
+
+        if (screenRadius < 0.35 && dist < CATCH_DISTANCE * 2.5) {
+          // 照準内でかつある程度近ければキャッチ
+          onCaught();
+        }
+      }
+    }, { passive: false });
+
+    /* ============================================================
+       UI イベント
+       ============================================================ */
+    const inputW = document.getElementById('room-width');
+    const inputD = document.getElementById('room-depth');
+    const inputH = document.getElementById('room-height');
+    const valW   = document.getElementById('val-width');
+    const valD   = document.getElementById('val-depth');
+    const valH   = document.getElementById('val-height');
+
+    function onSizeChange() {
+      roomSize.width  = parseFloat(inputW.value);
+      roomSize.depth  = parseFloat(inputD.value);
+      roomSize.height = parseFloat(inputH.value);
+      valW.textContent = roomSize.width.toFixed(1)  + 'm';
+      valD.textContent = roomSize.depth.toFixed(1)  + 'm';
+      valH.textContent = roomSize.height.toFixed(1) + 'm';
+      createBoundaryBox();
+      createBoundaryFaces();
+    }
+
+    inputW.addEventListener('input', onSizeChange);
+    inputD.addEventListener('input', onSizeChange);
+    inputH.addEventListener('input', onSizeChange);
+
+    document.getElementById('start-game').addEventListener('click', () => {
+      gameStarted = true;
+      document.getElementById('room-config').style.display = 'none';
+      document.getElementById('hud-info').style.display    = 'block';
+      document.getElementById('crosshair').style.display   = 'block';
+
+      resetWifiPosition();
+      wifiGroup.visible = true;
+
+      if (boundaryWireframe) boundaryWireframe.material.opacity = 0.15;
+      if (boundaryFaces)     boundaryFaces.material.opacity     = 0.02;
+
+      unlockAudio();
+    });
+
+    /* ============================================================
+       AR開始
+       ============================================================ */
+    document.getElementById('ar-button').addEventListener('click', async () => {
+      const btn = document.getElementById('ar-button');
+      btn.disabled = true;
+      btn.textContent = '準備中...';
+
+      try {
+        initAudio();
+
+        // 1. カメラアクセス
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width:  { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        const video = document.getElementById('camera-bg');
+        video.srcObject = stream;
+        await video.play();
+
+        // 2. DeviceOrientation / DeviceMotion 権限（iOS 13+）
+        if (typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function') {
+          const perm = await DeviceMotionEvent.requestPermission();
+          if (perm !== 'granted') throw new Error('センサーの使用が許可されませんでした');
+        }
+
+        // 3. センサー開始
+        window.addEventListener('deviceorientation', onDeviceOrientation);
+        setupMotionWalk();
+
+        // 4. UI切り替え
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('overlay').style.display      = 'block';
+        document.getElementById('placement-hint').style.display = 'block';
+
+        unlockAudio();
+        arStarted = true;
+
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'AR開始';
+        console.error(err);
+        alert('AR開始エラー: ' + err.message);
+      }
+    });
+
+    /* ============================================================
+       メインアニメーションループ
+       ============================================================ */
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const timeS = performance.now() / 1000;
+      const dt    = Math.min(clock.getDelta(), 0.05);
+
+      if (arStarted) {
+        // レティクル更新（配置前）
+        if (!placed) {
+          updateReticle();
+        }
+
+        // ゲームロジック
+        if (gameStarted && !gameCaught) {
+          updateWifi(dt);
+          updateTrails(timeS);
+          updateCatchChecker(timeS);
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+  </script>
+</body>
+</html>

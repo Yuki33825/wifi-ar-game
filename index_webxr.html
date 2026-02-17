@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>脱走Wi-Fiを捕まえろ！ (WebXR版)</title>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: #000;
+      color: #fff;
+    }
+
+    #ar-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+
+    /* --- AR開始前の画面 --- */
+    #start-screen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0a0a2e 0%, #1a1a4e 100%);
+      z-index: 10000;
+    }
+    #start-screen h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    #start-screen .subtitle {
+      font-size: 13px;
+      color: #00ff88;
+      margin-bottom: 32px;
+    }
+    #ar-button {
+      padding: 16px 48px;
+      font-size: 18px;
+      font-weight: bold;
+      border: none;
+      border-radius: 12px;
+      background: #00ff88;
+      color: #000;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    #ar-button:active { transform: scale(0.95); }
+    #ar-button:disabled {
+      background: #555;
+      color: #999;
+      cursor: not-allowed;
+    }
+    #ar-fallback {
+      margin-top: 24px;
+      text-align: center;
+      display: none;
+    }
+    #ar-fallback p {
+      font-size: 14px;
+      color: #ff6666;
+      margin-bottom: 12px;
+    }
+    #ar-fallback a {
+      display: inline-block;
+      padding: 10px 24px;
+      background: rgba(0, 221, 255, 0.8);
+      color: #000;
+      text-decoration: none;
+      border-radius: 20px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    /* --- AR中のオーバーレイ --- */
+    #overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+
+    #title-bar {
+      position: fixed;
+      top: 24px; left: 16px; right: 16px;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.55);
+      border-radius: 12px;
+      padding: 10px 16px;
+      pointer-events: auto;
+    }
+    #title-bar h1 {
+      font-size: 16px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    }
+    #title-bar .subtitle {
+      font-size: 11px;
+      color: #00ff88;
+      margin-top: 2px;
+    }
+    #title-bar a {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 12px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 20px;
+      font-size: 11px;
+    }
+
+    /* --- 配置ガイド --- */
+    #placement-hint {
+      position: fixed;
+      bottom: 100px;
+      left: 0; right: 0;
+      text-align: center;
+      pointer-events: none;
+      display: none;
+    }
+    #placement-hint p {
+      display: inline-block;
+      padding: 12px 24px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 24px;
+      font-size: 15px;
+      font-weight: bold;
+    }
+    #placement-hint .emoji { font-size: 20px; }
+
+    /* --- 部屋サイズ設定UI --- */
+    #room-config {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px;
+      z-index: 9999;
+      pointer-events: auto;
+      font-size: 14px;
+      width: 300px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: none;
+    }
+    #room-config h3 {
+      margin-bottom: 16px;
+      font-size: 18px;
+      color: #00ddff;
+      text-align: center;
+    }
+    .config-row { margin-bottom: 16px; }
+    .config-row label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .config-row input[type=range] {
+      width: 100%;
+      accent-color: #00ddff;
+    }
+    #room-config button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #room-config button#start-game {
+      background: #00ff88;
+      color: #000;
+    }
+    #room-config button#start-game:active {
+      background: #00cc66;
+    }
+
+    /* --- 距離HUD --- */
+    #hud-info {
+      position: fixed;
+      bottom: 120px;
+      left: 0; right: 0;
+      text-align: center;
+      pointer-events: none;
+      display: none;
+    }
+    #dist-text {
+      font-size: 22px;
+      font-weight: bold;
+      text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+    }
+    #dist-trend {
+      margin-top: 4px;
+      font-size: 14px;
+      font-weight: bold;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    #dist-trend.approaching { color: #44ff88; }
+    #dist-trend.receding { color: #ff6666; }
+    #proximity-bar-wrap {
+      margin: 8px auto 0;
+      width: 180px;
+      height: 8px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #proximity-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ff4444, #ffaa00, #00ff88);
+      border-radius: 4px;
+      transition: width 0.2s;
+    }
+
+    /* --- ステータスバー（キャッチ結果） --- */
+    #status-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 16px; right: 16px;
+      text-align: center;
+      background: rgba(0, 180, 80, 0.85);
+      border-radius: 12px;
+      padding: 16px;
+      pointer-events: auto;
+      display: none;
+    }
+    #status-message {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    #wifi-info { display: none; margin-top: 12px; font-size: 14px; line-height: 1.8; }
+    #wifi-info .label { opacity: 0.8; }
+    #wifi-info .value {
+      font-weight: bold;
+      font-size: 18px;
+      background: rgba(255,255,255,0.15);
+      padding: 2px 10px;
+      border-radius: 6px;
+      letter-spacing: 1px;
+    }
+    #wifi-info .hint { margin-top: 12px; font-size: 12px; opacity: 0.8; }
+
+    /* --- フラッシュ演出 --- */
+    #catch-flash {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.9);
+      z-index: 10000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    #catch-flash.active { opacity: 1; }
+  </style>
+</head>
+
+<body>
+
+  <!-- フラッシュ演出 -->
+  <div id="catch-flash"></div>
+
+  <!-- AR開始前の画面 -->
+  <div id="start-screen">
+    <h1>脱走したWi-Fiを追いかけろ！</h1>
+    <p class="subtitle">WebXR 高精度版</p>
+    <button id="ar-button" disabled>読み込み中...</button>
+    <div id="ar-fallback">
+      <p>このブラウザはWebXR ARに対応していません</p>
+      <a href="/ios">iOS版ARを開く →</a>
+    </div>
+  </div>
+
+  <!-- AR中オーバーレイ（dom-overlay） -->
+  <div id="overlay">
+    <div id="title-bar">
+      <h1>脱走したWi-Fiを追いかけろ！</h1>
+      <div class="subtitle">WebXR 高精度版</div>
+      <a href="/">↩ 通常版に戻る</a>
+    </div>
+
+    <div id="placement-hint">
+      <p><span class="emoji">👆</span> 床をタップしてプレイエリアを配置</p>
+    </div>
+
+    <div id="room-config">
+      <h3>プレイエリア設定</h3>
+      <div class="config-row">
+        <label>幅 (Width): <span id="val-width">5.0m</span></label>
+        <input type="range" id="room-width" min="2.0" max="10.0" step="0.5" value="5.0">
+      </div>
+      <div class="config-row">
+        <label>奥行 (Depth): <span id="val-depth">6.0m</span></label>
+        <input type="range" id="room-depth" min="2.0" max="10.0" step="0.5" value="6.0">
+      </div>
+      <div class="config-row">
+        <label>高さ (Height): <span id="val-height">2.5m</span></label>
+        <input type="range" id="room-height" min="1.5" max="5.0" step="0.1" value="2.5">
+      </div>
+      <button id="start-game">ゲーム開始</button>
+    </div>
+
+    <div id="hud-info">
+      <div id="dist-text"></div>
+      <div id="dist-trend"></div>
+      <div id="proximity-bar-wrap">
+        <div id="proximity-bar"></div>
+      </div>
+    </div>
+
+    <div id="status-bar">
+      <p id="status-message"></p>
+      <div id="wifi-info">
+        <div><span class="label">SSID：</span><span class="value" id="ssid-value"></span></div>
+        <div style="margin-top:6px"><span class="label">PASS：</span><span class="value" id="pass-value"></span></div>
+        <p class="hint">設定アプリを開いて、このWi-Fiに接続してください</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- three.js (ES Module) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    /* ============================================================
+       定数
+       ============================================================ */
+    const MOVE_SPEED = 0.8;
+    const CATCH_DISTANCE = 1.2;
+    const FREEZE_DISTANCE = CATCH_DISTANCE;
+    const TRAIL_INTERVAL = 0.15;
+    const TRAIL_LIFETIME = 3.0;
+    const TRAIL_MAX_COUNT = 80;
+    const WIFI_SSID = 'MEETING_WIFI';
+    const WIFI_PASS = 'password123';
+    const BEEP_FREQ_FAR = 300;
+    const BEEP_FREQ_NEAR = 1200;
+    const BEEP_INTERVAL_FAR = 1.5;
+    const BEEP_INTERVAL_NEAR = 0.1;
+    const BEEP_START_DISTANCE = 8.0;
+    const BEEP_DURATION = 0.08;
+    const SCALE_AT_FAR = 0.4;
+    const SCALE_AT_NEAR = 1.5;
+    const SCALE_FAR_DIST = 8.0;
+    const SCALE_NEAR_DIST = 1.0;
+
+    /* ============================================================
+       ゲーム状態
+       ============================================================ */
+    let gameCaught = false;
+    let gameStarted = false;
+    let placed = false;
+    const roomSize = { width: 5.0, depth: 6.0, height: 2.5 };
+
+    /* ============================================================
+       Web Audio API
+       ============================================================ */
+    let audioCtx = null;
+    let audioUnlocked = false;
+    let lastBeepTime = 0;
+
+    function initAudio() {
+      if (audioCtx) return;
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { console.warn('AudioContext not supported', e); }
+    }
+
+    function unlockAudio() {
+      if (audioUnlocked || !audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.01);
+      audioUnlocked = true;
+    }
+
+    function playBeep(frequency, volume) {
+      if (!audioCtx || gameCaught) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = frequency;
+      gain.gain.value = volume;
+      gain.gain.setTargetAtTime(0, audioCtx.currentTime + BEEP_DURATION * 0.7, 0.01);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + BEEP_DURATION);
+    }
+
+    function playCatchSound() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+      osc.frequency.linearRampToValueAtTime(1600, audioCtx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 0.05);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    function updateProximityBeep(distance, now) {
+      if (!audioCtx || gameCaught || distance > BEEP_START_DISTANCE) return;
+      const t = Math.max(0, Math.min(1, (distance - CATCH_DISTANCE) / (BEEP_START_DISTANCE - CATCH_DISTANCE)));
+      const interval = BEEP_INTERVAL_NEAR + t * (BEEP_INTERVAL_FAR - BEEP_INTERVAL_NEAR);
+      if (now - lastBeepTime >= interval) {
+        const freq = BEEP_FREQ_NEAR + t * (BEEP_FREQ_FAR - BEEP_FREQ_NEAR);
+        const vol = 0.05 + (1 - t) * 0.2;
+        playBeep(freq, vol);
+        lastBeepTime = now;
+      }
+    }
+
+    /* ============================================================
+       ユーティリティ
+       ============================================================ */
+    function randBetween(min, max) { return Math.random() * (max - min) + min; }
+
+    function distanceToScale(distance) {
+      const t = Math.max(0, Math.min(1, (distance - SCALE_NEAR_DIST) / (SCALE_FAR_DIST - SCALE_NEAR_DIST)));
+      return SCALE_AT_NEAR + t * (SCALE_AT_FAR - SCALE_AT_NEAR);
+    }
+
+    /* ============================================================
+       three.js シーン初期化
+       ============================================================ */
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // ライティング
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(-1, 2, 1);
+    scene.add(dirLight);
+
+    // リサイズ対応
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /* ============================================================
+       レティクル（床追従インジケーター）
+       ============================================================ */
+    const reticleGroup = new THREE.Group();
+    // リング
+    const ringGeo = new THREE.RingGeometry(0.12, 0.15, 32).rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide });
+    reticleGroup.add(new THREE.Mesh(ringGeo, ringMat));
+    // 中心ドット
+    const dotGeo = new THREE.CircleGeometry(0.02, 16).rotateX(-Math.PI / 2);
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide });
+    reticleGroup.add(new THREE.Mesh(dotGeo, dotMat));
+    reticleGroup.matrixAutoUpdate = false;
+    reticleGroup.visible = false;
+    scene.add(reticleGroup);
+
+    /* ============================================================
+       roomRoot（ワールド固定のアンカーグループ）
+       ============================================================ */
+    const roomRoot = new THREE.Group();
+    roomRoot.visible = false;
+    scene.add(roomRoot);
+
+    /* ============================================================
+       境界ボックス（roomRoot のローカル座標）
+       ============================================================ */
+    let boundaryWireframe = null;
+
+    function createBoundaryBox() {
+      if (boundaryWireframe) roomRoot.remove(boundaryWireframe);
+      const geo = new THREE.BoxGeometry(roomSize.width, roomSize.height, roomSize.depth);
+      const edges = new THREE.EdgesGeometry(geo);
+      const mat = new THREE.LineBasicMaterial({ color: 0x00ddff, transparent: true, opacity: 0.3 });
+      boundaryWireframe = new THREE.LineSegments(edges, mat);
+      boundaryWireframe.position.y = roomSize.height / 2;
+      roomRoot.add(boundaryWireframe);
+    }
+    createBoundaryBox();
+
+    // 半透明ボックス面（薄い）
+    let boundaryFaces = null;
+
+    function createBoundaryFaces() {
+      if (boundaryFaces) roomRoot.remove(boundaryFaces);
+      const geo = new THREE.BoxGeometry(roomSize.width, roomSize.height, roomSize.depth);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x00ddff, transparent: true, opacity: 0.05,
+        side: THREE.DoubleSide, depthWrite: false
+      });
+      boundaryFaces = new THREE.Mesh(geo, mat);
+      boundaryFaces.position.y = roomSize.height / 2;
+      roomRoot.add(boundaryFaces);
+    }
+    createBoundaryFaces();
+
+    /* ============================================================
+       Wi-Fiオブジェクト（roomRoot ローカル座標で移動）
+       ============================================================ */
+    const wifiGroup = new THREE.Group();
+    wifiGroup.visible = false;
+
+    // トーラス3本（Wi-Fiアンテナ）
+    const torusMat1 = new THREE.MeshBasicMaterial({ color: 0x00ddff, transparent: true, opacity: 0.9 });
+    const torusMat2 = new THREE.MeshBasicMaterial({ color: 0x44eeff, transparent: true, opacity: 0.9 });
+    const torusMat3 = new THREE.MeshBasicMaterial({ color: 0x88ffff, transparent: true, opacity: 0.9 });
+
+    const torus1 = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.03, 8, 32, Math.PI / 2), torusMat1);
+    torus1.rotation.set(0, 0, Math.PI / 4);
+    wifiGroup.add(torus1);
+
+    const torus2 = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.03, 8, 32, Math.PI / 2), torusMat2);
+    torus2.rotation.set(0, 0, Math.PI / 4);
+    wifiGroup.add(torus2);
+
+    const torus3 = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.03, 8, 32, Math.PI / 2), torusMat3);
+    torus3.rotation.set(0, 0, Math.PI / 4);
+    wifiGroup.add(torus3);
+
+    // 中心球
+    const centerSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+    );
+    centerSphere.position.y = -0.08;
+    wifiGroup.add(centerSphere);
+
+    // 発光エフェクト球
+    const glowSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x00ccff, transparent: true, opacity: 0.08, side: THREE.DoubleSide })
+    );
+    wifiGroup.add(glowSphere);
+
+    roomRoot.add(wifiGroup);
+
+    // Wi-Fi速度ベクトル
+    const wifiVelocity = new THREE.Vector3(
+      randBetween(-MOVE_SPEED, MOVE_SPEED),
+      randBetween(-MOVE_SPEED * 0.5, MOVE_SPEED * 0.5),
+      randBetween(-MOVE_SPEED, MOVE_SPEED)
+    );
+
+    function resetWifiPosition() {
+      const halfW = roomSize.width / 2;
+      const halfD = roomSize.depth / 2;
+      wifiGroup.position.set(
+        randBetween(-halfW + 0.3, halfW - 0.3),
+        randBetween(0.3, roomSize.height - 0.3),
+        randBetween(-halfD + 0.3, halfD - 0.3)
+      );
+      wifiVelocity.set(
+        randBetween(-MOVE_SPEED, MOVE_SPEED),
+        randBetween(-MOVE_SPEED * 0.5, MOVE_SPEED * 0.5),
+        randBetween(-MOVE_SPEED, MOVE_SPEED)
+      );
+    }
+
+    let wifiStopped = false;
+
+    function updateWifi(dt) {
+      if (wifiStopped || gameCaught || !gameStarted) return;
+
+      // カメラとの距離チェック（フリーズ）
+      const wifiWorldPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(wifiWorldPos);
+      const camWorldPos = new THREE.Vector3();
+      camera.getWorldPosition(camWorldPos);
+      const distToCamera = wifiWorldPos.distanceTo(camWorldPos);
+      if (distToCamera <= FREEZE_DISTANCE) return;
+
+      const pos = wifiGroup.position;
+      pos.addScaledVector(wifiVelocity, dt);
+
+      const halfW = roomSize.width / 2;
+      const halfD = roomSize.depth / 2;
+
+      if (pos.x > halfW) { pos.x = halfW; wifiVelocity.x = -Math.abs(wifiVelocity.x); }
+      else if (pos.x < -halfW) { pos.x = -halfW; wifiVelocity.x = Math.abs(wifiVelocity.x); }
+
+      if (pos.z > halfD) { pos.z = halfD; wifiVelocity.z = -Math.abs(wifiVelocity.z); }
+      else if (pos.z < -halfD) { pos.z = -halfD; wifiVelocity.z = Math.abs(wifiVelocity.z); }
+
+      if (pos.y < 0) { pos.y = 0; wifiVelocity.y = Math.abs(wifiVelocity.y); }
+      else if (pos.y > roomSize.height) { pos.y = roomSize.height; wifiVelocity.y = -Math.abs(wifiVelocity.y); }
+
+      // 回転
+      wifiGroup.rotation.y += dt * 1.5;
+    }
+
+    /* ============================================================
+       軌跡システム
+       ============================================================ */
+    const trails = [];
+    let lastTrailSpawn = 0;
+    let trailsStopped = false;
+
+    function updateTrails(timeS) {
+      // 生成
+      if (!trailsStopped && !gameCaught && gameStarted && timeS - lastTrailSpawn >= TRAIL_INTERVAL) {
+        spawnTrail(timeS);
+        lastTrailSpawn = timeS;
+      }
+      // 更新 & 削除
+      for (let i = trails.length - 1; i >= 0; i--) {
+        const t = trails[i];
+        const age = timeS - t.createdAt;
+        if (age >= TRAIL_LIFETIME) {
+          scene.remove(t.mesh);
+          t.mesh.geometry.dispose();
+          t.mesh.material.dispose();
+          trails.splice(i, 1);
+          continue;
+        }
+        t.mesh.material.opacity = (1.0 - age / TRAIL_LIFETIME) * 0.6;
+      }
+    }
+
+    function spawnTrail(timeS) {
+      while (trails.length >= TRAIL_MAX_COUNT) {
+        const oldest = trails.shift();
+        scene.remove(oldest.mesh);
+        oldest.mesh.geometry.dispose();
+        oldest.mesh.material.dispose();
+      }
+      const worldPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(worldPos);
+      const geo = new THREE.SphereGeometry(0.06, 8, 8);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00ccff, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(worldPos);
+      scene.add(mesh);
+      trails.push({ mesh, createdAt: timeS });
+    }
+
+    /* ============================================================
+       キャッチ判定 & HUD
+       ============================================================ */
+    const distTextEl = document.getElementById('dist-text');
+    const distTrendEl = document.getElementById('dist-trend');
+    const proximityBarEl = document.getElementById('proximity-bar');
+    const hudInfoEl = document.getElementById('hud-info');
+    let prevDistance = null;
+
+    function updateCatchChecker(timeS) {
+      if (gameCaught || !gameStarted) return;
+
+      const camPos = new THREE.Vector3();
+      camera.getWorldPosition(camPos);
+      const wifiPos = new THREE.Vector3();
+      wifiGroup.getWorldPosition(wifiPos);
+      const dist = camPos.distanceTo(wifiPos);
+
+      // 距離テキスト
+      if (distTextEl) distTextEl.textContent = dist.toFixed(1) + 'm';
+
+      // トレンド
+      if (distTrendEl && prevDistance !== null) {
+        const diff = prevDistance - dist;
+        if (diff > 0.05) {
+          distTrendEl.textContent = '↑ 近づいています';
+          distTrendEl.className = 'approaching';
+          distTrendEl.style.display = '';
+        } else if (diff < -0.05) {
+          distTrendEl.textContent = '↓ 遠ざかっています';
+          distTrendEl.className = 'receding';
+          distTrendEl.style.display = '';
+        } else {
+          distTrendEl.style.display = 'none';
+        }
+      }
+      prevDistance = dist;
+
+      // プロキシミティバー
+      if (proximityBarEl) {
+        const pct = Math.max(0, Math.min(100,
+          (1 - (dist - CATCH_DISTANCE) / (BEEP_START_DISTANCE - CATCH_DISTANCE)) * 100
+        ));
+        proximityBarEl.style.width = pct + '%';
+      }
+
+      // スケーリング
+      const s = distanceToScale(dist);
+      wifiGroup.scale.set(s, s, s);
+
+      // ビープ
+      updateProximityBeep(dist, timeS);
+
+      // キャッチ判定
+      if (dist <= CATCH_DISTANCE) {
+        onCaught();
+      }
+    }
+
+    function onCaught() {
+      gameCaught = true;
+      wifiStopped = true;
+      trailsStopped = true;
+
+      playCatchSound();
+
+      // フラッシュ
+      const flash = document.getElementById('catch-flash');
+      flash.classList.add('active');
+      setTimeout(() => flash.classList.remove('active'), 300);
+
+      // HUD非表示
+      if (hudInfoEl) hudInfoEl.style.display = 'none';
+
+      // 結果表示
+      setTimeout(() => {
+        document.getElementById('status-bar').style.display = 'block';
+        document.getElementById('status-message').textContent = 'Wi-Fiを捕まえました！';
+        document.getElementById('ssid-value').textContent = WIFI_SSID;
+        document.getElementById('pass-value').textContent = WIFI_PASS;
+        document.getElementById('wifi-info').style.display = 'block';
+      }, 600);
+    }
+
+    /* ============================================================
+       WebXR セッション管理
+       ============================================================ */
+    let hitTestSource = null;
+    let xrSession = null;
+
+    async function startAR() {
+      initAudio();
+      unlockAudio();
+
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['local-floor'],
+        optionalFeatures: ['hit-test', 'dom-overlay'],
+        domOverlay: { root: document.getElementById('overlay') }
+      });
+
+      xrSession = session;
+
+      session.addEventListener('end', () => {
+        xrSession = null;
+        hitTestSource = null;
+        document.getElementById('start-screen').style.display = 'flex';
+        document.getElementById('overlay').style.display = 'none';
+      });
+
+      renderer.xr.setReferenceSpaceType('local-floor');
+      await renderer.xr.setSession(session);
+
+      // Hit Test Source の取得
+      try {
+        const viewerSpace = await session.requestReferenceSpace('viewer');
+        hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+      } catch (e) {
+        console.warn('Hit test not available:', e);
+      }
+
+      // 画面タップ → 配置
+      session.addEventListener('select', onSelect);
+
+      // UI切り替え
+      document.getElementById('start-screen').style.display = 'none';
+      document.getElementById('overlay').style.display = 'block';
+      document.getElementById('placement-hint').style.display = 'block';
+    }
+
+    function onSelect() {
+      if (!placed && reticleGroup.visible) {
+        // レティクルの位置にroomRootを配置
+        roomRoot.position.copy(reticleGroup.position);
+        roomRoot.quaternion.copy(reticleGroup.quaternion);
+        roomRoot.visible = true;
+        placed = true;
+
+        reticleGroup.visible = false;
+
+        // UI: 配置ガイド非表示 → サイズ調整UI表示
+        document.getElementById('placement-hint').style.display = 'none';
+        document.getElementById('room-config').style.display = 'block';
+      }
+    }
+
+    /* ============================================================
+       UI イベント
+       ============================================================ */
+    const inputW = document.getElementById('room-width');
+    const inputD = document.getElementById('room-depth');
+    const inputH = document.getElementById('room-height');
+    const valW = document.getElementById('val-width');
+    const valD = document.getElementById('val-depth');
+    const valH = document.getElementById('val-height');
+
+    function onSizeChange() {
+      roomSize.width = parseFloat(inputW.value);
+      roomSize.depth = parseFloat(inputD.value);
+      roomSize.height = parseFloat(inputH.value);
+      valW.textContent = roomSize.width.toFixed(1) + 'm';
+      valD.textContent = roomSize.depth.toFixed(1) + 'm';
+      valH.textContent = roomSize.height.toFixed(1) + 'm';
+      createBoundaryBox();
+      createBoundaryFaces();
+    }
+
+    inputW.addEventListener('input', onSizeChange);
+    inputD.addEventListener('input', onSizeChange);
+    inputH.addEventListener('input', onSizeChange);
+
+    document.getElementById('start-game').addEventListener('click', () => {
+      gameStarted = true;
+      document.getElementById('room-config').style.display = 'none';
+      document.getElementById('hud-info').style.display = 'block';
+
+      // Wi-Fiを初期位置に配置して表示
+      resetWifiPosition();
+      wifiGroup.visible = true;
+
+      // 境界ボックスを薄くする
+      if (boundaryWireframe) boundaryWireframe.material.opacity = 0.15;
+      if (boundaryFaces) boundaryFaces.material.opacity = 0.02;
+
+      // 音声unlock
+      unlockAudio();
+    });
+
+    // AR開始ボタン
+    document.getElementById('ar-button').addEventListener('click', () => {
+      startAR().catch(err => {
+        console.error('Failed to start AR:', err);
+        alert('AR開始に失敗しました: ' + err.message);
+      });
+    });
+
+    /* ============================================================
+       WebXR対応チェック
+       ============================================================ */
+    async function checkXRSupport() {
+      const btn = document.getElementById('ar-button');
+      const fallback = document.getElementById('ar-fallback');
+
+      if (!navigator.xr) {
+        btn.style.display = 'none';
+        fallback.style.display = 'block';
+        return;
+      }
+
+      const supported = await navigator.xr.isSessionSupported('immersive-ar');
+      if (supported) {
+        btn.disabled = false;
+        btn.textContent = 'AR開始';
+      } else {
+        btn.style.display = 'none';
+        fallback.style.display = 'block';
+      }
+    }
+    checkXRSupport();
+
+    /* ============================================================
+       メインアニメーションループ
+       ============================================================ */
+    const clock = new THREE.Clock();
+    let lastTime = 0;
+
+    renderer.setAnimationLoop((timestamp, frame) => {
+      const timeS = timestamp / 1000;
+      const dt = clock.getDelta();
+
+      // Hit Test: 配置前のみ
+      if (frame && hitTestSource && !placed) {
+        const refSpace = renderer.xr.getReferenceSpace();
+        const results = frame.getHitTestResults(hitTestSource);
+
+        if (results.length > 0) {
+          const pose = results[0].getPose(refSpace);
+          if (pose) {
+            reticleGroup.visible = true;
+            reticleGroup.matrix.fromArray(pose.transform.matrix);
+            reticleGroup.matrix.decompose(
+              reticleGroup.position,
+              reticleGroup.quaternion,
+              reticleGroup.scale
+            );
+          }
+        } else {
+          reticleGroup.visible = false;
+        }
+      }
+
+      // ゲームロジック
+      if (gameStarted && !gameCaught) {
+        updateWifi(dt);
+        updateTrails(timeS);
+        updateCatchChecker(timeS);
+      }
+
+      renderer.render(scene, camera);
+    });
+
+  </script>
+</body>
+</html>
